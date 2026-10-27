@@ -1,5 +1,6 @@
 import { METRO_AREAS, STATE_NAMES, isRemoteUs, metroIdOf, stateCodeOf } from "./locations.js";
 import { guessCompanyDomain, logoUrl } from "./logos.js";
+import { ROLES, roleIdsOf } from "./roles.js";
 
 const LISTINGS_URL =
   "https://raw.githubusercontent.com/SimplifyJobs/Summer2027-Internships/dev/.github/scripts/listings.json";
@@ -16,7 +17,7 @@ const filtersToggle = document.getElementById("filters-toggle");
 const activeFilterCount = document.getElementById("active-filter-count");
 const filterPanel = document.getElementById("filter-panel");
 const locationSelect = document.getElementById("location-select");
-const categorySelect = document.getElementById("category-select");
+const roleSelect = document.getElementById("role-select");
 const degreeSelect = document.getElementById("degree-select");
 const termSelect = document.getElementById("term-select");
 const statusTabs = document.querySelectorAll(".tab");
@@ -67,7 +68,7 @@ function matchesFilters(posting) {
   if (locationKind === "metro" && !posting.metroIds.has(locationValue)) return false;
   if (locationKind === "state" && !posting.stateCodes.has(locationValue)) return false;
 
-  if (categorySelect.value !== "all" && posting.category !== categorySelect.value) return false;
+  if (roleSelect.value !== "all" && !posting.roleIds.has(roleSelect.value)) return false;
   if (termSelect.value !== "all" && !posting.terms.includes(termSelect.value)) return false;
   // Postings that don't list a degree aren't ruled out, so they match every degree.
   if (degreeSelect.value !== "all" && posting.degrees.length > 0 && !posting.degrees.includes(degreeSelect.value)) {
@@ -226,7 +227,7 @@ function toggleApplied(postingId) {
 }
 
 function updateFilterCount() {
-  const activeCount = [locationSelect, categorySelect, degreeSelect, termSelect].filter((select) => select.value !== "all").length;
+  const activeCount = [roleSelect, locationSelect, degreeSelect, termSelect].filter((select) => select.value !== "all").length;
   activeFilterCount.textContent = String(activeCount);
   activeFilterCount.hidden = activeCount === 0;
 }
@@ -278,6 +279,14 @@ function createOptionGroup(label, options) {
   return group;
 }
 
+// Adds every role that has at least one posting, with posting counts.
+function fillRoleSelect() {
+  const roleCounts = countBy(allPostings, (posting) => posting.roleIds);
+  for (const role of ROLES.filter((role) => roleCounts.has(role.id))) {
+    roleSelect.append(new Option(`${role.name} (${roleCounts.get(role.id).toLocaleString()})`, role.id));
+  }
+}
+
 // Adds metro areas and states that have at least one posting, with posting counts.
 function fillLocationSelect() {
   const remoteCount = allPostings.filter((posting) => posting.isRemoteUs).length;
@@ -326,6 +335,7 @@ async function loadPostings() {
       posting.stateCodes = new Set(posting.locations.map(stateCodeOf).filter(Boolean));
       posting.metroIds = new Set(posting.locations.map(metroIdOf).filter(Boolean));
       posting.isRemoteUs = posting.locations.some(isRemoteUs);
+      posting.roleIds = new Set(roleIdsOf(posting));
       posting.degrees ??= [];
     }
   } catch (error) {
@@ -335,24 +345,15 @@ async function loadPostings() {
     return;
   }
 
-  const categoryCounts = new Map();
-  const terms = new Set();
-  for (const posting of allPostings) {
-    categoryCounts.set(posting.category, (categoryCounts.get(posting.category) ?? 0) + 1);
-    posting.terms.forEach((term) => terms.add(term));
-  }
-  // Hide rare categories that are just spelling variants of the main ones.
-  fillSelect(
-    categorySelect,
-    [...categoryCounts].filter(([, count]) => count >= 50).map(([category]) => category).sort(),
-  );
+  const terms = new Set(allPostings.flatMap((posting) => posting.terms));
   fillSelect(termSelect, [...terms].filter((term) => term !== "N/A").sort());
+  fillRoleSelect();
   fillLocationSelect();
 
   render();
 }
 
-for (const control of [locationSelect, categorySelect, degreeSelect, termSelect]) {
+for (const control of [roleSelect, locationSelect, degreeSelect, termSelect]) {
   control.addEventListener("change", resetAndRender);
 }
 for (const tab of statusTabs) {
